@@ -62,44 +62,51 @@ jobs:
           node <<'NODE'
           const fs = require('node:fs');
 
-          const apiKey = process.env.SECURITY_REVIEW_MODEL_API_KEY;
-          const baseUrl = (process.env.SECURITY_REVIEW_MODEL_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
-          const model = process.env.SECURITY_REVIEW_MODEL_NAME;
-          if (!apiKey) throw new Error('SECURITY_REVIEW_MODEL_API_KEY secret is missing');
-          if (!model) throw new Error('SECURITY_REVIEW_MODEL_NAME secret is missing');
+          async function main() {
+            const apiKey = process.env.SECURITY_REVIEW_MODEL_API_KEY;
+            const baseUrl = (process.env.SECURITY_REVIEW_MODEL_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+            const model = process.env.SECURITY_REVIEW_MODEL_NAME;
+            if (!apiKey) throw new Error('SECURITY_REVIEW_MODEL_API_KEY secret is missing');
+            if (!model) throw new Error('SECURITY_REVIEW_MODEL_NAME secret is missing');
 
-          const artifact = JSON.parse(fs.readFileSync('artifacts/security-context.json', 'utf8'));
-          const prompt = artifact.prompt;
-          if (typeof prompt !== 'string' || !prompt.includes('<!-- pi-security-review-json -->')) {
-            throw new Error('Security review prompt missing or invalid');
+            const artifact = JSON.parse(fs.readFileSync('artifacts/security-context.json', 'utf8'));
+            const prompt = artifact.prompt;
+            if (typeof prompt !== 'string' || !prompt.includes('<!-- pi-security-review-json -->')) {
+              throw new Error('Security review prompt missing or invalid');
+            }
+
+            const response = await fetch(`${baseUrl}/chat/completions`, {
+              method: 'POST',
+              headers: {
+                authorization: `Bearer ${apiKey}`,
+                'content-type': 'application/json',
+              },
+              body: JSON.stringify({
+                model,
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0,
+              }),
+            });
+
+            if (!response.ok) {
+              const body = await response.text();
+              throw new Error(`Model request failed ${response.status}: ${body.slice(0, 500)}`);
+            }
+
+            const data = await response.json();
+            const content = data?.choices?.[0]?.message?.content;
+            if (typeof content !== 'string' || !content.includes('<!-- pi-security-review-json -->')) {
+              throw new Error('Model response missing pi-security-review JSON marker');
+            }
+
+            fs.mkdirSync('artifacts', { recursive: true });
+            fs.writeFileSync('artifacts/final-security-report.md', content, 'utf8');
           }
 
-          const response = await fetch(`${baseUrl}/chat/completions`, {
-            method: 'POST',
-            headers: {
-              authorization: `Bearer ${apiKey}`,
-              'content-type': 'application/json',
-            },
-            body: JSON.stringify({
-              model,
-              messages: [{ role: 'user', content: prompt }],
-              temperature: 0,
-            }),
+          main().catch((error) => {
+            console.error(error);
+            process.exit(1);
           });
-
-          if (!response.ok) {
-            const body = await response.text();
-            throw new Error(`Model request failed ${response.status}: ${body.slice(0, 500)}`);
-          }
-
-          const data = await response.json();
-          const content = data?.choices?.[0]?.message?.content;
-          if (typeof content !== 'string' || !content.includes('<!-- pi-security-review-json -->')) {
-            throw new Error('Model response missing pi-security-review JSON marker');
-          }
-
-          fs.mkdirSync('artifacts', { recursive: true });
-          fs.writeFileSync('artifacts/final-security-report.md', content, 'utf8');
           NODE
           echo "ran=true" >> "$GITHUB_OUTPUT"
 
