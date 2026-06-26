@@ -3,7 +3,7 @@
  *
  * Pi can load TypeScript through runtime loader, so build step preserves source
  * files instead of transpiling. Copy rules stay intentionally strict to keep
- * tests, fixtures, dev scripts, references, and local output out of published
+ * tests, fixtures, dev scripts and local output out of published
  * package surface.
  */
 
