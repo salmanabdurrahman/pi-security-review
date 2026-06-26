@@ -404,7 +404,13 @@ Composite action default is artifact-only, uploads JSON/Markdown results by defa
     retention-days: 7
 ```
 
-Set `upload-results: false` when artifacts are too sensitive. See `docs/CI_GITHUB_ACTIONS.md` for full workflow templates, permissions, final report mode, comments, and fork safety.
+Set `upload-results: false` when artifacts are too sensitive. See `docs/CI_GITHUB_ACTIONS.md` for full workflow templates, permissions, final report mode, comments, fork safety, and provider coverage.
+
+### Model-backed PR workflow providers
+
+The bundled `.github/workflows/security-review-pr.yml` uses a generic OpenAI-compatible Chat Completions request. Providers that support `Authorization: Bearer <key>`, `/chat/completions`, and standard `{ model, messages, temperature }` bodies can work without workflow code changes.
+
+Documented examples include DeepSeek, Kimi/Moonshot AI, MiniMax, Z.AI/GLM, plus Ollama, LM Studio, vLLM, and SGLang for self-hosted or external trusted runners. Provider-specific thinking/reasoning parameters are intentionally outside the default workflow. OpenRouter guidance is deferred until maintainer-approved routing/attribution docs exist.
 
 ## Privacy And Security
 

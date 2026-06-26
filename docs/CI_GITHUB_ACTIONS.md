@@ -349,16 +349,15 @@ The bundled PR workflow uses a generic OpenAI-compatible Chat Completions reques
 
 This works for providers that accept the standard Chat Completions subset. Provider-specific thinking/reasoning controls are not enabled by the workflow unless you add a trusted runner step that supplies provider-specific request fields.
 
-| Provider / runtime | Base URL                        | Model examples                                                         | Notes                                                                                                                              |
-| ------------------ | ------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| OpenRouter         | `https://openrouter.ai/api/v1`  | `~openai/gpt-latest`, `anthropic/claude-sonnet-*`, model catalog slugs | OpenAI-compatible. Optional attribution headers (`HTTP-Referer`, `X-OpenRouter-Title`) are not required by this workflow.          |
-| DeepSeek           | `https://api.deepseek.com`      | `deepseek-v4-flash`, `deepseek-v4-pro`                                 | OpenAI-compatible. Thinking controls use provider-specific fields; generic workflow still works for basic calls.                   |
-| Kimi / Moonshot AI | `https://api.moonshot.ai/v1`    | Kimi model IDs from Kimi platform                                      | OpenAI-compatible. Kimi-specific thinking parameters need custom runner logic.                                                     |
-| MiniMax            | `https://api.minimax.io/v1`     | `MiniMax-M3`, M2.x models                                              | OpenAI-compatible. Reasoning/thinking params are provider-specific.                                                                |
-| Z.AI / Zhipu GLM   | `https://api.z.ai/api/paas/v4/` | `glm-5.2`, GLM family IDs                                              | OpenAI SDK compatible. Coding Plan uses separate endpoint `https://api.z.ai/api/coding/paas/v4`.                                   |
-| Ollama local       | `http://localhost:11434/v1`     | `gpt-oss:20b`, `qwen3:8b`, local pulled models                         | Works on self-hosted runner or local trusted runner. `localhost` on GitHub-hosted runner is not your laptop.                       |
-| LM Studio local    | `http://localhost:1234/v1`      | loaded local model identifier                                          | Works on self-hosted runner/local trusted runner.                                                                                  |
-| vLLM / SGLang      | `http://<host>:<port>/v1`       | HF/open-weight model IDs served by runtime                             | OpenAI-compatible self-hosted runtimes; model-specific reasoning/chat-template settings belong in server or trusted runner config. |
+| Provider / runtime | Base URL                        | Model examples                                 | Notes                                                                                                                              |
+| ------------------ | ------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| DeepSeek           | `https://api.deepseek.com`      | `deepseek-v4-flash`, `deepseek-v4-pro`         | OpenAI-compatible. Thinking controls use provider-specific fields; generic workflow still works for basic calls.                   |
+| Kimi / Moonshot AI | `https://api.moonshot.ai/v1`    | Kimi model IDs from Kimi platform              | OpenAI-compatible. Kimi-specific thinking parameters need custom runner logic.                                                     |
+| MiniMax            | `https://api.minimax.io/v1`     | `MiniMax-M3`, M2.x models                      | OpenAI-compatible. Reasoning/thinking params are provider-specific.                                                                |
+| Z.AI / Zhipu GLM   | `https://api.z.ai/api/paas/v4/` | `glm-5.2`, GLM family IDs                      | OpenAI SDK compatible. Coding Plan uses separate endpoint `https://api.z.ai/api/coding/paas/v4`.                                   |
+| Ollama local       | `http://localhost:11434/v1`     | `gpt-oss:20b`, `qwen3:8b`, local pulled models | Works on self-hosted runner or local trusted runner. `localhost` on GitHub-hosted runner is not your laptop.                       |
+| LM Studio local    | `http://localhost:1234/v1`      | loaded local model identifier                  | Works on self-hosted runner/local trusted runner.                                                                                  |
+| vLLM / SGLang      | `http://<host>:<port>/v1`       | HF/open-weight model IDs served by runtime     | OpenAI-compatible self-hosted runtimes; model-specific reasoning/chat-template settings belong in server or trusted runner config. |
 
 Example repository secrets for an OpenAI-compatible provider:
 
@@ -371,10 +370,6 @@ SECURITY_REVIEW_MODEL_BASE_URL=<provider base URL>
 Examples:
 
 ```text
-# OpenRouter
-SECURITY_REVIEW_MODEL_BASE_URL=https://openrouter.ai/api/v1
-SECURITY_REVIEW_MODEL_NAME=~openai/gpt-latest
-
 # DeepSeek
 SECURITY_REVIEW_MODEL_BASE_URL=https://api.deepseek.com
 SECURITY_REVIEW_MODEL_NAME=deepseek-v4-pro
@@ -393,6 +388,8 @@ SECURITY_REVIEW_MODEL_NAME=glm-5.2
 ```
 
 For local models in Pi interactive usage, configure `~/.pi/agent/models.json` with `api: "openai-completions"`, for example Ollama/LM Studio/vLLM/SGLang. The GitHub PR workflow does not read Pi `models.json`; it only uses the three `SECURITY_REVIEW_MODEL_*` secrets above. Use a self-hosted runner or external trusted model runner when the model server is local.
+
+OpenRouter is intentionally omitted from this workflow guide for now. It can still work as an OpenAI-compatible endpoint, but provider-specific routing/attribution docs should be added only after maintainer approval.
 
 Record intended model metadata in artifact-only mode:
 
