@@ -161,8 +161,8 @@ test("capture hook captures nested Pi message content", async () => {
   const json = JSON.parse(
     await readFile(join(repo, ".pi", "security-review", "latest-report.json"), "utf8"),
   );
-  expect(markdown).toContain("Files reviewed: 9");
-  expect(markdown).toContain("Truncation: context truncated");
+  expect(markdown).toContain("| Files reviewed | 9 |");
+  expect(markdown).toContain("| Truncation | context truncated |");
   expect(json.summary.contextTruncated).toBe(true);
 });
 

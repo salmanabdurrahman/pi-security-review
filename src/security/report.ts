@@ -64,11 +64,15 @@ export function renderSecurityReviewMarkdown(
   parts.push("");
   parts.push("## Summary");
   parts.push("");
-  parts.push(`- Files reviewed: ${summary.filesReviewed}`);
-  parts.push(`- Findings: ${high} high, ${medium} medium`);
-  if (options.scope) parts.push(`- Scope: ${options.scope}`);
-  parts.push(`- Truncation: ${formatTruncation(diffTruncated, contextTruncated)}`);
-  if (summary.reviewCompleted === false) parts.push("- Review completed: false");
+  parts.push(renderStatusLine(high, medium, summary.reviewCompleted !== false));
+  parts.push("");
+  parts.push("| Metric | Value |");
+  parts.push("| --- | ---: |");
+  parts.push(`| Files reviewed | ${summary.filesReviewed} |`);
+  parts.push(`| Findings | ${high} high, ${medium} medium |`);
+  if (options.scope) parts.push(`| Scope | ${options.scope} |`);
+  parts.push(`| Truncation | ${formatTruncation(diffTruncated, contextTruncated)} |`);
+  if (summary.reviewCompleted === false) parts.push("| Review completed | false |");
   parts.push("");
 
   if (findings.length > 0) {
@@ -77,16 +81,19 @@ export function renderSecurityReviewMarkdown(
     for (const severity of SEVERITY_ORDER) {
       const group = findings.filter((finding) => finding.severity === severity);
       if (group.length === 0 || severity === "LOW") continue;
+      parts.push(`### ${severity} (${group.length})`);
+      parts.push("");
       for (const finding of group) parts.push(...renderFinding(finding));
     }
   } else {
     parts.push("## Findings");
     parts.push("");
-    parts.push("No high-confidence HIGH/MEDIUM findings found.");
+    parts.push("> ✅ No high-confidence HIGH/MEDIUM findings found.");
     parts.push("");
   }
 
-  parts.push("## Excluded / filtered notes");
+  parts.push("<details>");
+  parts.push("<summary>Excluded / filtered notes</summary>");
   parts.push("");
   if (excluded.length > 0) {
     for (const line of summarizeExcluded(excluded)) parts.push(`- ${line}`);
@@ -94,8 +101,11 @@ export function renderSecurityReviewMarkdown(
     parts.push("- No findings excluded by deterministic filters.");
   }
   parts.push("");
+  parts.push("</details>");
+  parts.push("");
 
-  parts.push("## Metadata");
+  parts.push("<details>");
+  parts.push("<summary>Metadata</summary>");
   parts.push("");
   if (model) parts.push(`- Model: ${model}`);
   const agents = payload.metadata?.agents;
@@ -109,6 +119,8 @@ export function renderSecurityReviewMarkdown(
   if (codeReviewGraphUsed !== undefined) {
     parts.push(`- Code review graph used: ${codeReviewGraphUsed ? "yes" : "no"}`);
   }
+  parts.push("");
+  parts.push("</details>");
 
   while (parts.length > 0 && parts[parts.length - 1] === "") parts.pop();
   return parts.join("\n");
@@ -170,16 +182,35 @@ function sarifLevel(severity: SecurityFinding["severity"]): "error" | "warning" 
   return "note";
 }
 
+function renderStatusLine(high: number, medium: number, completed: boolean): string {
+  if (!completed) return "> ⚠️ Review not completed. Treat result as partial.";
+  if (high > 0) return `> 🚨 ${high} high-severity finding${high === 1 ? "" : "s"} need attention.`;
+  if (medium > 0)
+    return `> ⚠️ ${medium} medium-severity finding${medium === 1 ? "" : "s"} need review.`;
+  return "> ✅ No high/medium findings after deterministic filtering.";
+}
+
 function renderFinding(finding: SecurityFinding): string[] {
   const location = finding.line ? `${finding.file}:${finding.line}` : finding.file;
   return [
-    `### ${finding.severity}: ${finding.title} in \`${location}\``,
+    `<details open>`,
+    `<summary><strong>${finding.severity}</strong>: ${finding.title} — <code>${location}</code></summary>`,
     "",
-    `- Category: \`${finding.category}\``,
-    `- Confidence: ${finding.confidence.toFixed(2)}`,
-    `- Description: ${finding.description}`,
-    `- Exploit scenario: ${finding.exploitScenario}`,
-    `- Recommendation: ${finding.recommendation}`,
+    `| Field | Value |`,
+    `| --- | --- |`,
+    `| Category | \`${finding.category}\` |`,
+    `| Confidence | ${finding.confidence.toFixed(2)} |`,
+    "",
+    `**Description**  `,
+    finding.description,
+    "",
+    `**Exploit scenario**  `,
+    finding.exploitScenario,
+    "",
+    `**Recommendation**  `,
+    finding.recommendation,
+    "",
+    `</details>`,
     "",
   ];
 }
