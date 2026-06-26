@@ -55,21 +55,29 @@ The examples use floating major tags for readability (`actions/checkout@v6`, `ov
 
 ## Script Flags
 
-| Flag                       | Description                                                                    |
-| -------------------------- | ------------------------------------------------------------------------------ |
-| `--base <ref>`             | Base ref for Git diff                                                          |
-| `--head <ref>`             | Head ref for Git diff                                                          |
-| `--output <path>`          | JSON artifact path, default `.pi/security-review/ci-context.json`              |
-| `--markdown <path>`        | Markdown artifact path, default `.pi/security-review/ci-report.md`             |
-| `--pr <number>`            | Pull request number for optional comment                                       |
-| `--comment`                | Post PR comment; requires `--yes`, `--pr`, and final report unless override    |
-| `--yes` / `-y`             | Explicit approval for GitHub comment mutation                                  |
-| `--model <provider/model>` | Record intended Pi model metadata in context/prompt                            |
-| `--final-report <path>`    | Read model-produced Markdown/JSON marker as final report                       |
-| `--allow-artifact-comment` | Maintainer override to comment artifact-only context; avoid for normal results |
-| `--fail-on-high`           | Exit non-zero when final report contains HIGH findings                         |
-| `--fail-on-medium`         | Exit non-zero when final report contains MEDIUM or HIGH findings               |
-| `--ci-help`                | Show help                                                                      |
+| Flag                                | Description                                                                    |
+| ----------------------------------- | ------------------------------------------------------------------------------ |
+| `--base <ref>`                      | Base ref for Git diff                                                          |
+| `--head <ref>`                      | Head ref for Git diff                                                          |
+| `--output <path>`                   | JSON artifact path, default `.pi/security-review/ci-context.json`              |
+| `--markdown <path>`                 | Markdown artifact path, default `.pi/security-review/ci-report.md`             |
+| `--pr <number>`                     | Pull request number for optional comment                                       |
+| `--comment`                         | Post PR comment; requires `--yes`, `--pr`, and final report unless override    |
+| `--yes` / `-y`                      | Explicit approval for GitHub comment mutation                                  |
+| `--model <provider/model>`          | Record intended Pi model metadata in context/prompt                            |
+| `--final-report <path>`             | Read model-produced Markdown/JSON marker as final report                       |
+| `--scan-instructions-file <path>`   | Read repo-relative custom scan instructions file                               |
+| `--filter-instructions-file <path>` | Read repo-relative custom false-positive filter file                           |
+| `--scan-instructions-text <text>`   | Add inline custom scan instructions                                            |
+| `--filter-instructions-text <text>` | Add inline custom false-positive filter instructions                           |
+| `--include <glob[,glob]>`           | Override config include globs for this CI run                                  |
+| `--exclude <glob[,glob]>`           | Append exclude globs for this CI run                                           |
+| `--paths <path...>`                 | Focus Git diff on paths                                                        |
+| `--exclude-directories <dir[,dir]>` | Upstream-compatible alias, expands each dir to `<dir>/**`                      |
+| `--allow-artifact-comment`          | Maintainer override to comment artifact-only context; avoid for normal results |
+| `--fail-on-high`                    | Exit non-zero when final report contains HIGH findings                         |
+| `--fail-on-medium`                  | Exit non-zero when final report contains MEDIUM or HIGH findings               |
+| `--ci-help`                         | Show help                                                                      |
 
 ## Outputs
 
@@ -97,7 +105,11 @@ bun run security-review:ci -- \
 - `mode`
 - bounded context payload
 - provider-neutral prompt text
+- safe custom instruction text/source metadata when configured
+- bounded PR metadata from `GITHUB_EVENT_PATH` when available
 - report envelope or final report payload
+
+Custom instruction files must be repo-relative, stay inside the repository, avoid secret-like paths, and fit the size bound. Inline instruction flags are also bounded. PR metadata is context only; it cannot override security review rules.
 
 `ci-report.md` contains rendered Markdown plus JSON marker.
 
@@ -193,11 +205,12 @@ jobs:
           head: HEAD
           output: artifacts/security-context.json
           markdown: artifacts/security-report.md
-      - uses: actions/upload-artifact@v4
-        with:
-          name: pi-security-review
-          path: artifacts/
+          scan-instructions-file: .github/security-scan.txt
+          exclude-directories: vendor,third_party
+          retention-days: 7
 ```
+
+Action inputs mirror script flags for `base`, `head`, `model`, final report ingestion, custom instruction file/text, `include`, `exclude`, `paths`, and upstream-compatible `exclude-directories`. `upload-results` defaults to `true` and uploads JSON/Markdown artifacts through `actions/upload-artifact`; set `upload-results: false` for repositories where workflow artifacts are too sensitive. `retention-days` defaults to `7`.
 
 Action outputs:
 
@@ -326,7 +339,59 @@ AI review is not hardened against prompt injection from PR diffs, comments, docs
 
 No Claude requirement. The generated prompt can be run with any Pi-configured provider/model: Anthropic, OpenAI, Google, OpenAI-compatible proxies, local models, or custom providers.
 
-Record intended model metadata:
+The bundled PR workflow uses a generic OpenAI-compatible Chat Completions request:
+
+- `SECURITY_REVIEW_MODEL_BASE_URL` + `/chat/completions`
+- `Authorization: Bearer $SECURITY_REVIEW_MODEL_API_KEY`
+- `model: $SECURITY_REVIEW_MODEL_NAME`
+- `messages: [{ role: "user", content: prompt }]`
+- `temperature: 0`
+
+This works for providers that accept the standard Chat Completions subset. Provider-specific thinking/reasoning controls are not enabled by the workflow unless you add a trusted runner step that supplies provider-specific request fields.
+
+| Provider / runtime | Base URL                        | Model examples                                 | Notes                                                                                                                              |
+| ------------------ | ------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| DeepSeek           | `https://api.deepseek.com`      | `deepseek-v4-flash`, `deepseek-v4-pro`         | OpenAI-compatible. Thinking controls use provider-specific fields; generic workflow still works for basic calls.                   |
+| Kimi / Moonshot AI | `https://api.moonshot.ai/v1`    | Kimi model IDs from Kimi platform              | OpenAI-compatible. Kimi-specific thinking parameters need custom runner logic.                                                     |
+| MiniMax            | `https://api.minimax.io/v1`     | `MiniMax-M3`, M2.x models                      | OpenAI-compatible. Reasoning/thinking params are provider-specific.                                                                |
+| Z.AI / Zhipu GLM   | `https://api.z.ai/api/paas/v4/` | `glm-5.2`, GLM family IDs                      | OpenAI SDK compatible. Coding Plan uses separate endpoint `https://api.z.ai/api/coding/paas/v4`.                                   |
+| Ollama local       | `http://localhost:11434/v1`     | `gpt-oss:20b`, `qwen3:8b`, local pulled models | Works on self-hosted runner or local trusted runner. `localhost` on GitHub-hosted runner is not your laptop.                       |
+| LM Studio local    | `http://localhost:1234/v1`      | loaded local model identifier                  | Works on self-hosted runner/local trusted runner.                                                                                  |
+| vLLM / SGLang      | `http://<host>:<port>/v1`       | HF/open-weight model IDs served by runtime     | OpenAI-compatible self-hosted runtimes; model-specific reasoning/chat-template settings belong in server or trusted runner config. |
+
+Example repository secrets for an OpenAI-compatible provider:
+
+```text
+SECURITY_REVIEW_MODEL_API_KEY=<provider API key>
+SECURITY_REVIEW_MODEL_NAME=<provider model id>
+SECURITY_REVIEW_MODEL_BASE_URL=<provider base URL>
+```
+
+Examples:
+
+```text
+# DeepSeek
+SECURITY_REVIEW_MODEL_BASE_URL=https://api.deepseek.com
+SECURITY_REVIEW_MODEL_NAME=deepseek-v4-pro
+
+# Kimi / Moonshot
+SECURITY_REVIEW_MODEL_BASE_URL=https://api.moonshot.ai/v1
+SECURITY_REVIEW_MODEL_NAME=<kimi model id>
+
+# MiniMax
+SECURITY_REVIEW_MODEL_BASE_URL=https://api.minimax.io/v1
+SECURITY_REVIEW_MODEL_NAME=MiniMax-M3
+
+# Z.AI / GLM
+SECURITY_REVIEW_MODEL_BASE_URL=https://api.z.ai/api/paas/v4/
+SECURITY_REVIEW_MODEL_NAME=glm-5.2
+```
+
+For local models in Pi interactive usage, configure `~/.pi/agent/models.json` with `api: "openai-completions"`, for example Ollama/LM Studio/vLLM/SGLang. The GitHub PR workflow does not read Pi `models.json`; it only uses the three `SECURITY_REVIEW_MODEL_*` secrets above. Use a self-hosted runner or external trusted model runner when the model server is local.
+
+OpenRouter is intentionally omitted from this workflow guide for now. It can still work as an OpenAI-compatible endpoint, but provider-specific routing/attribution docs should be added only after maintainer approval.
+
+Record intended model metadata in artifact-only mode:
 
 ```bash
 bun run security-review:ci -- \

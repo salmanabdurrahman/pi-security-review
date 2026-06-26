@@ -356,6 +356,19 @@ Artifact-only mode builds bounded context plus prompt. It does not call a model 
 bun run security-review:ci -- --base origin/main --head HEAD
 ```
 
+CI can safely override scope and upstream-style custom instructions without permanent repo config changes:
+
+```bash
+bun run security-review:ci -- \
+  --base origin/main \
+  --head HEAD \
+  --scan-instructions-file .github/security-scan.txt \
+  --filter-instructions-text "Ignore generated fixtures." \
+  --include "src/**/*.ts" \
+  --exclude-directories "vendor,third_party" \
+  --paths src packages/api
+```
+
 External final report mode reads model-produced marker output and applies fail gates:
 
 ```bash
@@ -379,16 +392,25 @@ bun run security-review:ci -- \
   --yes
 ```
 
-Composite action default is artifact-only and has no vendor API key input:
+Composite action default is artifact-only, uploads JSON/Markdown results by default, and has no vendor API key input:
 
 ```yaml
 - uses: owner/pi-security-review@v0.1.0
   with:
     base: origin/${{ github.base_ref }}
     head: HEAD
+    scan-instructions-file: .github/security-scan.txt
+    exclude-directories: vendor,third_party
+    retention-days: 7
 ```
 
-See `docs/CI_GITHUB_ACTIONS.md` for full workflow templates, permissions, final report mode, comments, and fork safety.
+Set `upload-results: false` when artifacts are too sensitive. See `docs/CI_GITHUB_ACTIONS.md` for full workflow templates, permissions, final report mode, comments, fork safety, and provider coverage.
+
+### Model-backed PR workflow providers
+
+The bundled `.github/workflows/security-review-pr.yml` uses a generic OpenAI-compatible Chat Completions request. Providers that support `Authorization: Bearer <key>`, `/chat/completions`, and standard `{ model, messages, temperature }` bodies can work without workflow code changes.
+
+Documented examples include DeepSeek, Kimi/Moonshot AI, MiniMax, Z.AI/GLM, plus Ollama, LM Studio, vLLM, and SGLang for self-hosted or external trusted runners. Provider-specific thinking/reasoning parameters are intentionally outside the default workflow. OpenRouter guidance is deferred until maintainer-approved routing/attribution docs exist.
 
 ## Privacy And Security
 
