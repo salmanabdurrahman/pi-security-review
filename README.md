@@ -1,6 +1,8 @@
 # pi-security-review
 
-High-signal security review package for Pi. It builds bounded security-review context from local Git diffs, queues a provider-neutral prompt through Pi's active model/provider, captures structured findings, applies deterministic false-positive filters, and can optionally publish gated GitHub PR comments.
+High-signal security review package for Pi. It builds bounded security-review context from local Git diffs, queues a provider-neutral prompt through Pi's active model/provider, captures structured findings, applies deterministic false-positive filters in interactive/tool flows, and can optionally publish gated GitHub PR comments.
+
+This package adapts security-review ideas from [`anthropics/claude-code-security-review`](https://github.com/anthropics/claude-code-security-review) for the Pi package ecosystem: Pi commands, Pi LLM tools, Pi model/provider lifecycle, bounded local reports, provider-neutral prompts, and explicit write approvals.
 
 The package is local-first, telemetry-free, and designed for interactive Pi review plus headless CI artifact/final-report workflows.
 
@@ -240,8 +242,8 @@ Key options:
 | `enableModelFiltering`                 | Reserved for model-backed filter runner; deterministic filters still run |
 | `modelProfiles`                        | Role metadata for default/auditor/filter/reporter                        |
 | `agentPipeline`                        | Active role pipeline metadata, default `auditor`                         |
-| `customSecurityScanInstructions`       | Optional repo policy text in config                                      |
-| `falsePositiveFilteringInstructions`   | Optional filter policy text in config                                    |
+| `customSecurityScanInstructions`       | Optional repo-relative scan-instruction file path in config              |
+| `falsePositiveFilteringInstructions`   | Optional repo-relative filter-instruction file path in config            |
 | `github.commentByDefault`              | Safe default remains false                                               |
 | `github.updateExistingComment`         | Update marker comment when approved                                      |
 | `github.commentMarker`                 | PR comment marker, default `<!-- pi-security-review -->`                 |
@@ -273,7 +275,7 @@ Minimal example:
 6. Add optional code-review-graph context when available.
 7. Queue provider-neutral prompt through Pi active model/provider.
 8. Capture assistant output marker on `message_end`.
-9. Normalize, redact, and deterministically filter findings.
+9. Normalize, redact, and deterministically filter findings during interactive capture.
 10. Write latest Markdown and JSON reports under `.pi/security-review/`.
 11. Optionally preview/post GitHub PR comment after explicit approval.
 
@@ -297,6 +299,8 @@ Instruction file safeguards:
 - 64 KiB max file size.
 - Absolute paths and `..` traversal refused.
 - Secret-like paths refused, including `.env`, token/credential/private-key names, and key/cert files.
+- Config fields reference repo-relative instruction files.
+- CLI/tool `*-instructions-text` fields are for inline one-off instructions.
 - Custom scan instructions extend default security categories.
 - Custom filter instructions tune false-positive criteria but do not disable deterministic hard filters.
 
@@ -339,8 +343,9 @@ Report handling safeguards:
 
 - Malformed/incomplete output records actionable warnings instead of crashing.
 - Common secret-like values are redacted before local write or GitHub comment rendering.
-- Deterministic filters run after capture and before report storage/rendering.
-- Filtering metadata records kept/excluded counts and stages.
+- Interactive `message_end` capture and `security_review_filter_findings` run deterministic filters before storage/rendering.
+- CI external-final-report mode normalizes and redacts trusted model output; run `security_review_filter_findings` separately if a CI runner needs deterministic refiltering.
+- Filtering metadata records kept/excluded counts and stages when deterministic filters run.
 - Model-side filter role is currently deferred unless implemented by a runner.
 
 ## CI/CD

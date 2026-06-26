@@ -52,7 +52,7 @@ Custom scan/filter instructions can come from:
 - `--filter-instructions-file <repo-relative path>`
 - `--scan-instructions-text <text>`
 - `--filter-instructions-text <text>`
-- Config fields `customSecurityScanInstructions` and `falsePositiveFilteringInstructions`
+- Config fields `customSecurityScanInstructions` and `falsePositiveFilteringInstructions` as repo-relative instruction file paths
 
 File mode is preferred for durable organization policy. Inline mode is intended for one-off review focus.
 
@@ -192,7 +192,7 @@ Prompt context can include role metadata for:
 
 Models should preserve role metadata in `metadata.agents` when available. Never include provider secrets, API keys, tokens, hidden prompts, or auth material in metadata.
 
-Current runtime executes deterministic capture filters. Model-side filter/reporter roles are metadata/deferred unless an external runner explicitly implements them.
+Current interactive runtime executes deterministic capture filters. `security_review_filter_findings` also applies deterministic filtering on demand. CI external-final-report mode normalizes/redacts trusted model output but does not rerun deterministic filters unless runner calls the filter tool separately. Model-side filter/reporter roles are metadata/deferred unless an external runner explicitly implements them.
 
 ## Deterministic Filtering
 

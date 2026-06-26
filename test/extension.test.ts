@@ -113,6 +113,59 @@ test("security-review queues prompt and captures marker report", async () => {
   expect(json.summary.reviewCompleted).toBe(true);
 });
 
+test("capture hook captures nested Pi message content", async () => {
+  const repo = await tempRepo();
+  const events = new Map<string, (payload: unknown, ctx: any) => Promise<void> | void>();
+
+  await extension({
+    registerCommand() {},
+    on(event: string, handler: (payload: unknown, ctx: any) => Promise<void> | void) {
+      events.set(event, handler);
+    },
+  });
+
+  await events.get("message_end")?.(
+    {
+      message: {
+        content: [
+          {
+            type: "text",
+            text: [
+              "# Security Review",
+              "",
+              "No high-confidence HIGH/MEDIUM findings found.",
+              "",
+              "<!-- pi-security-review-json -->",
+              JSON.stringify({
+                findings: [],
+                excludedFindings: [],
+                analysisSummary: {
+                  filesReviewed: 9,
+                  highSeverity: 0,
+                  mediumSeverity: 0,
+                  lowSeverity: 0,
+                  reviewCompleted: true,
+                  contextTruncated: true,
+                },
+              }),
+              "<!-- /pi-security-review-json -->",
+            ].join("\n"),
+          },
+        ],
+      },
+    },
+    { cwd: repo, ui: { notify() {}, setStatus() {} } },
+  );
+
+  const markdown = await readFile(join(repo, ".pi", "security-review", "latest-report.md"), "utf8");
+  const json = JSON.parse(
+    await readFile(join(repo, ".pi", "security-review", "latest-report.json"), "utf8"),
+  );
+  expect(markdown).toContain("| Files reviewed | 9 |");
+  expect(markdown).toContain("| Truncation | context truncated |");
+  expect(json.summary.contextTruncated).toBe(true);
+});
+
 test("capture hook stores deterministic-filtered model output", async () => {
   const repo = await tempRepo();
   const events = new Map<string, (payload: unknown, ctx: any) => Promise<void> | void>();

@@ -53,7 +53,7 @@ export async function resolveDiffScope(
   ]);
   const untrackedFiles = await collectUntrackedFiles(repoRoot, config);
   if (unstaged.length > 0 || untrackedFiles.diff.length > 0) {
-    return buildScope(
+    const unstagedScope = buildScope(
       "unstaged",
       config,
       `${unstaged}${untrackedFiles.diff}`,
@@ -61,6 +61,7 @@ export async function resolveDiffScope(
       undefined,
       [...parseDiffFiles(unstaged), ...untrackedFiles.files],
     );
+    if (hasReviewableDiff(unstagedScope)) return unstagedScope;
   }
 
   const staged = await gitDiff(repoRoot, [
@@ -133,7 +134,7 @@ function buildScope(
   if (filtered.files.filter((file) => !file.skipped).length > config.maxFiles)
     warnings.push(`File count exceeds maxFiles=${config.maxFiles}; extra files skipped.`);
   if (Buffer.byteLength(diff, "utf8") > config.maxDiffBytes) {
-    diff = diff.slice(0, config.maxDiffBytes);
+    diff = truncateUtf8(diff, config.maxDiffBytes);
     truncated = true;
     warnings.push(`Diff truncated at maxDiffBytes=${config.maxDiffBytes}.`);
   }
@@ -146,6 +147,10 @@ function buildScope(
     truncated,
     warnings: [...warnings, ...filtered.warnings],
   };
+}
+
+function hasReviewableDiff(scope: ResolvedDiffScope): boolean {
+  return scope.diff.length > 0 && scope.files.some((file) => !file.skipped);
 }
 
 function filterFiles(
@@ -284,6 +289,19 @@ function isSecretLikePath(path: string): boolean {
     /(^|\/)(\.env(?:\..*)?|.*(?:secret|token|credential|private[-_]?key).*)$/iu.test(path) ||
     /\.(pem|key|p12|pfx|crt|cer)$/iu.test(path)
   );
+}
+
+function truncateUtf8(text: string, maxBytes: number): string {
+  if (Buffer.byteLength(text, "utf8") <= maxBytes) return text;
+  let bytes = 0;
+  let output = "";
+  for (const char of text) {
+    const nextBytes = Buffer.byteLength(char, "utf8");
+    if (bytes + nextBytes > maxBytes) break;
+    output += char;
+    bytes += nextBytes;
+  }
+  return output;
 }
 
 function normalizePath(path: string): string {

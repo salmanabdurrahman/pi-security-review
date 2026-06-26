@@ -10,7 +10,12 @@ import { buildCommentBody, publishSecurityReviewComment } from "../github/commen
 import { filterFindings } from "../security/filters.ts";
 import { normalizePayload } from "../security/findings.ts";
 import { renderSarifLikeJson, renderSecurityReviewMarkdown } from "../security/report.ts";
-import { readLatestJson, readLatestMarkdown } from "../store/reportStore.ts";
+import {
+  readLatestJson,
+  readLatestMarkdown,
+  writeLatestJson,
+  writeLatestMarkdown,
+} from "../store/reportStore.ts";
 import { buildSecurityReviewContext } from "./buildContext.ts";
 
 export const MAX_TOOL_CHARS = 50_000;
@@ -201,9 +206,9 @@ function buildContextTool(): ToolDefinition<{
           falsePositiveFilteringInstructionsFile: params.filterInstructionsFile,
         });
         return textResult(built.payload, {
-          truncated: built.truncated,
-          totalBytes: built.totalBytes,
-          outputBytes: built.outputBytes,
+          contextTruncated: built.truncated,
+          contextTotalBytes: built.totalBytes,
+          contextOutputBytes: built.outputBytes,
         });
       }),
   };
@@ -274,15 +279,17 @@ function renderReportTool(): ToolDefinition<{
   format?: "markdown" | "json" | "sarif";
   title?: string;
   scope?: string;
+  persistLatest?: boolean;
 }> {
   return {
     name: "security_review_render_report",
     label: "Render Security Review Report",
     description:
-      "Render normalized security-review marker payload as Markdown, JSON, or valid SARIF 2.1.0 JSON.",
+      "Render normalized security-review marker payload as Markdown, JSON, or valid SARIF 2.1.0 JSON, and persist latest report by default.",
     promptSnippet: "security_review_render_report renders findings into bounded report output.",
     promptGuidelines: [
       "Use security_review_render_report after security_review_filter_findings to produce final report text.",
+      "By default this tool writes .pi/security-review/latest-report.md and latest-report.json; set persistLatest: false to render only.",
     ],
     parameters: Type.Object({
       payload: Type.String({
@@ -293,15 +300,39 @@ function renderReportTool(): ToolDefinition<{
       ),
       title: Type.Optional(Type.String()),
       scope: Type.Optional(Type.String()),
+      persistLatest: Type.Optional(Type.Boolean({ default: true })),
     }),
-    execute: async (_id, params) => {
-      const payload = normalizePayload(parseJson(params.payload, "payload"));
-      if (params.format === "json") return textResult(payload);
-      if (params.format === "sarif") return textResult(renderSarifLikeJson(payload));
-      return textResult(
-        renderSecurityReviewMarkdown(payload, { title: params.title, scope: params.scope }),
-      );
-    },
+    execute: async (_id, params, _signal, _onUpdate, ctx) =>
+      withConfig(ctx, async ({ repoRoot }) => {
+        const payload = normalizePayload(parseJson(params.payload, "payload"));
+        const markdown = renderSecurityReviewMarkdown(payload, {
+          title: params.title,
+          scope: params.scope,
+        });
+        let markdownPath: string | undefined;
+        let jsonPath: string | undefined;
+        if (params.persistLatest !== false) {
+          markdownPath = await writeLatestMarkdown(repoRoot, markdown);
+          jsonPath = await writeLatestJson(repoRoot, {
+            version: 1,
+            generatedAt: new Date().toISOString(),
+            repoRoot,
+            summary: payload.analysisSummary,
+            findings: payload.findings,
+            excludedFindings: payload.excludedFindings,
+            metadata: payload.metadata ?? {},
+          });
+        }
+
+        const details = {
+          persisted: params.persistLatest !== false,
+          latestMarkdownPath: markdownPath,
+          latestJsonPath: jsonPath,
+        };
+        if (params.format === "json") return textResult(payload, details);
+        if (params.format === "sarif") return textResult(renderSarifLikeJson(payload), details);
+        return textResult(markdown, details);
+      }),
   };
 }
 

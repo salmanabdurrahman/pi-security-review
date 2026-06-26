@@ -288,31 +288,54 @@ describe("marker parser and renderer", () => {
 
 ## Summary
 
-- Files reviewed: 2
-- Findings: 1 high, 0 medium
-- Scope: unstaged
-- Truncation: context truncated
+> 🚨 1 high-severity finding need attention.
+
+| Metric | Value |
+| --- | ---: |
+| Files reviewed | 2 |
+| Findings | 1 high, 0 medium |
+| Scope | unstaged |
+| Truncation | context truncated |
 
 ## Findings
 
-### HIGH: Authorization bypass in \`src/auth.ts:42\`
+### HIGH (1)
 
-- Category: \`auth_bypass\`
-- Confidence: 0.92
-- Description: Server-side authorization check can be bypassed.
-- Exploit scenario: Attacker sends request for another tenant and receives private data.
-- Recommendation: Check tenant authorization before returning data.
+<details open>
+<summary><strong>HIGH</strong>: Authorization bypass — <code>src/auth.ts:42</code></summary>
 
-## Excluded / filtered notes
+| Field | Value |
+| --- | --- |
+| Category | \`auth_bypass\` |
+| Confidence | 0.92 |
+
+**Description**  
+Server-side authorization check can be bypassed.
+
+**Exploit scenario**  
+Attacker sends request for another tenant and receives private data.
+
+**Recommendation**  
+Check tenant authorization before returning data.
+
+</details>
+
+<details>
+<summary>Excluded / filtered notes</summary>
 
 - 1 finding: Generic rate limiting recommendation
 
-## Metadata
+</details>
+
+<details>
+<summary>Metadata</summary>
 
 - Model: local/qwen
 - Context truncated: yes
 - Diff truncated: no
-- Code review graph used: no`);
+- Code review graph used: no
+
+</details>`);
 
     const sarif = renderSarifLikeJson(payload);
     expect(sarif.version).toBe("2.1.0");

@@ -67,6 +67,23 @@ describe("status and diff scope", () => {
     expect(scope.files.find((file) => file.path === "util.test.ts")?.skipped).toBe("test");
   });
 
+  test("falls back to staged diff when unstaged changes are all filtered", async () => {
+    const repo = await tempRepo();
+    await writeFile(join(repo, "src.ts"), "export const value = 1;\n", "utf8");
+    await writeFile(join(repo, "README.md"), "# docs\n", "utf8");
+    await execFile("git", ["add", "src.ts", "README.md"], { cwd: repo });
+    await execFile("git", ["commit", "-m", "init"], { cwd: repo });
+
+    await writeFile(join(repo, "src.ts"), "export const value = 2;\n", "utf8");
+    await execFile("git", ["add", "src.ts"], { cwd: repo });
+    await writeFile(join(repo, "README.md"), "# docs\n\nlocal note\n", "utf8");
+
+    const scope = await resolveDiffScope(repo, DEFAULT_CONFIG);
+    expect(scope.type).toBe("staged");
+    expect(scope.diff).toContain("export const value = 2");
+    expect(scope.files.find((file) => file.path === "src.ts")?.skipped).toBeUndefined();
+  });
+
   test("truncates large diff with metadata", async () => {
     const repo = await tempRepo();
     await writeFile(join(repo, "src.ts"), "a\n", "utf8");
@@ -77,6 +94,19 @@ describe("status and diff scope", () => {
     const scope = await resolveDiffScope(repo, { ...DEFAULT_CONFIG, maxDiffBytes: 40 });
     expect(scope.truncated).toBe(true);
     expect(scope.warnings.join("\n")).toContain("Diff truncated");
+  });
+
+  test("truncates multibyte diff at max UTF-8 bytes", async () => {
+    const repo = await tempRepo();
+    await writeFile(join(repo, "src.ts"), "a\n", "utf8");
+    await execFile("git", ["add", "src.ts"], { cwd: repo });
+    await execFile("git", ["commit", "-m", "init"], { cwd: repo });
+    await writeFile(join(repo, "src.ts"), `${"🔐".repeat(100)}\n`, "utf8");
+
+    const scope = await resolveDiffScope(repo, { ...DEFAULT_CONFIG, maxDiffBytes: 120 });
+    expect(scope.truncated).toBe(true);
+    expect(Buffer.byteLength(scope.diff, "utf8")).toBeLessThanOrEqual(120);
+    expect(scope.diff).not.toContain("�");
   });
 });
 
