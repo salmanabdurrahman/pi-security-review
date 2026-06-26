@@ -1,0 +1,152 @@
+name: Pi Security Review PR
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  security-review:
+    name: Security review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Build security review context
+        id: security_review_context
+        uses: ./
+        with:
+          base: origin/${{ github.base_ref }}
+          head: HEAD
+          output: artifacts/security-context.json
+          markdown: artifacts/security-report.md
+          model: openai-compatible/${{ secrets.SECURITY_REVIEW_MODEL_NAME }}
+
+      - name: Validate context artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ steps.security_review_context.outputs.mode }}" = "artifact-only"
+          test -s artifacts/security-context.json
+          test -s artifacts/security-report.md
+          test -s .pi/security-review/latest-report.md
+          test -s .pi/security-review/latest-report.json
+          node <<'NODE'
+          const fs = require('node:fs');
+          const data = JSON.parse(fs.readFileSync('artifacts/security-context.json', 'utf8'));
+          if (data.mode !== 'artifact-only') throw new Error(`Unexpected mode: ${data.mode}`);
+          if (!data.prompt?.includes('<!-- pi-security-review-json -->')) {
+            throw new Error('Prompt marker missing');
+          }
+          NODE
+
+      - name: Run model-backed security review
+        id: model_review
+        if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        shell: bash
+        env:
+          SECURITY_REVIEW_MODEL_API_KEY: ${{ secrets.SECURITY_REVIEW_MODEL_API_KEY }}
+          SECURITY_REVIEW_MODEL_BASE_URL: ${{ secrets.SECURITY_REVIEW_MODEL_BASE_URL }}
+          SECURITY_REVIEW_MODEL_NAME: ${{ secrets.SECURITY_REVIEW_MODEL_NAME }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SECURITY_REVIEW_MODEL_API_KEY:-}" ] || [ -z "${SECURITY_REVIEW_MODEL_NAME:-}" ]; then
+            echo "ran=false" >> "$GITHUB_OUTPUT"
+            echo "Model-backed review skipped: SECURITY_REVIEW_MODEL_API_KEY or SECURITY_REVIEW_MODEL_NAME missing." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          const apiKey = process.env.SECURITY_REVIEW_MODEL_API_KEY;
+          const baseUrl = (process.env.SECURITY_REVIEW_MODEL_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+          const model = process.env.SECURITY_REVIEW_MODEL_NAME;
+          if (!apiKey) throw new Error('SECURITY_REVIEW_MODEL_API_KEY secret is missing');
+          if (!model) throw new Error('SECURITY_REVIEW_MODEL_NAME secret is missing');
+
+          const artifact = JSON.parse(fs.readFileSync('artifacts/security-context.json', 'utf8'));
+          const prompt = artifact.prompt;
+          if (typeof prompt !== 'string' || !prompt.includes('<!-- pi-security-review-json -->')) {
+            throw new Error('Security review prompt missing or invalid');
+          }
+
+          const response = await fetch(`${baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${apiKey}`,
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({
+              model,
+              messages: [{ role: 'user', content: prompt }],
+              temperature: 0,
+            }),
+          });
+
+          if (!response.ok) {
+            const body = await response.text();
+            throw new Error(`Model request failed ${response.status}: ${body.slice(0, 500)}`);
+          }
+
+          const data = await response.json();
+          const content = data?.choices?.[0]?.message?.content;
+          if (typeof content !== 'string' || !content.includes('<!-- pi-security-review-json -->')) {
+            throw new Error('Model response missing pi-security-review JSON marker');
+          }
+
+          fs.mkdirSync('artifacts', { recursive: true });
+          fs.writeFileSync('artifacts/final-security-report.md', content, 'utf8');
+          NODE
+          echo "ran=true" >> "$GITHUB_OUTPUT"
+
+      - name: Normalize final report, comment, and apply gate
+        if: ${{ steps.model_review.outputs.ran == 'true' }}
+        id: security_review_final
+        uses: ./
+        with:
+          base: origin/${{ github.base_ref }}
+          head: HEAD
+          final-report: artifacts/final-security-report.md
+          output: artifacts/security-final.json
+          markdown: artifacts/security-final.md
+          model: openai-compatible/${{ secrets.SECURITY_REVIEW_MODEL_NAME }}
+          comment: "true"
+          pr: ${{ github.event.pull_request.number }}
+          yes: "true"
+          fail-on-high: "true"
+          fail-on-medium: "true"
+
+      - name: Explain artifact-only fallback
+        if: ${{ steps.model_review.outputs.ran != 'true' }}
+        shell: bash
+        run: |
+          cat <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          ## Pi Security Review
+
+          Model-backed review and PR comment were skipped. This run produced artifact-only context/prompt, not a final security verdict.
+
+          To enable model-backed PR review and automatic PR comments for same-repository PRs, configure repository secrets:
+          - `SECURITY_REVIEW_MODEL_API_KEY`
+          - `SECURITY_REVIEW_MODEL_NAME`
+          - `SECURITY_REVIEW_MODEL_BASE_URL` (optional, default `https://api.openai.com/v1`)
+
+          Fork PRs stay artifact-only to avoid exposing model credentials to untrusted code.
+          EOF
+
+      - name: Upload security review artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-security-review-pr-${{ github.event.pull_request.number }}
+          path: |
+            artifacts/security-context.json
+            artifacts/security-report.md
+            artifacts/final-security-report.md
+            artifacts/security-final.json
+            artifacts/security-final.md
+            .pi/security-review/latest-report.md
+            .pi/security-review/latest-report.json
+          if-no-files-found: ignore

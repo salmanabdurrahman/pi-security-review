@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import extension from "../index.ts";
@@ -132,6 +132,28 @@ test("security_review_filter_findings and render_report produce bounded output",
     .execute("2", { payload: JSON.stringify(reportPayload) }, undefined, undefined, { cwd: repo });
   expect(rendered.content[0].text).toContain("# Security Review");
   expect(rendered.content[0].text).toContain("Missing server-side authorization");
+  expect(rendered.details.persisted).toBe(true);
+
+  const latestMarkdown = await readFile(
+    join(repo, ".pi", "security-review", "latest-report.md"),
+    "utf8",
+  );
+  const latestJson = JSON.parse(
+    await readFile(join(repo, ".pi", "security-review", "latest-report.json"), "utf8"),
+  );
+  expect(latestMarkdown).toContain("Missing server-side authorization");
+  expect(latestJson.summary.highSeverity).toBe(1);
+
+  const renderOnly = await tools
+    .get("security_review_render_report")
+    .execute(
+      "3",
+      { payload: JSON.stringify({ ...reportPayload, findings: [] }), persistLatest: false },
+      undefined,
+      undefined,
+      { cwd: repo },
+    );
+  expect(renderOnly.details.persisted).toBe(false);
 });
 
 async function tempRepo(): Promise<string> {

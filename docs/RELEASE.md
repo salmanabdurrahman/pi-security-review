@@ -179,7 +179,7 @@ Workflow requirements:
 - Node version compatible with npm trusted publishing.
 - `id-token: write` permission.
 - `contents: read` permission.
-- `npm publish --provenance`.
+- `npm publish` from trusted GitHub Actions/OIDC workflow (provenance handled by trusted publishing when configured).
 - No long-lived npm token.
 
 ## Tagging

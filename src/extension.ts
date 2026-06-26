@@ -695,9 +695,10 @@ function showCiHelp(ctx: SecurityReviewCommandContext): void {
     ctx,
     [
       "pi-security-review CI help",
-      "artifact mode: bun run security-review:ci -- --base origin/main --output security-review-results.json --markdown security-review-report.md",
-      "comment mode: requires explicit --comment --yes when implemented.",
-      "default: no GitHub/network write.",
+      "artifact mode: bun run security-review:ci -- --base origin/main --head HEAD --output security-review-results.json --markdown security-review-report.md",
+      "final report mode: add --final-report <path> and optional --fail-on-high/--fail-on-medium.",
+      "comment mode: requires --comment --yes --pr <number> plus --final-report unless maintainer override --allow-artifact-comment.",
+      "default: no model call and no GitHub/network write.",
     ].join("\n"),
     "info",
   );
@@ -792,14 +793,24 @@ function getActiveModelId(ctx: SecurityReviewCommandContext): string | undefined
 }
 
 function extractResponseText(payload: unknown): string | undefined {
-  const record =
-    payload && typeof payload === "object" ? (payload as Record<string, unknown>) : undefined;
-  if (!record) return undefined;
-  if (typeof record.text === "string") return record.text;
-  if (typeof record.content === "string") return record.content;
-  const message = record.message as Record<string, unknown> | undefined;
-  if (typeof message?.content === "string") return message.content;
-  const response = record.response as Record<string, unknown> | undefined;
-  if (typeof response?.text === "string") return response.text;
-  return undefined;
+  const text = collectTextFragments(payload, new Set()).join("").trim();
+  return text.length > 0 ? text : undefined;
+}
+
+function collectTextFragments(value: unknown, seen: Set<unknown>): string[] {
+  if (typeof value === "string") return [value];
+  if (!value || typeof value !== "object") return [];
+  if (seen.has(value)) return [];
+  seen.add(value);
+
+  if (Array.isArray(value)) return value.flatMap((item) => collectTextFragments(item, seen));
+
+  const record = value as Record<string, unknown>;
+  const direct = [record.text, record.content]
+    .flatMap((item) => collectTextFragments(item, seen))
+    .filter((item) => item.length > 0);
+  if (direct.length > 0) return direct;
+
+  const nestedKeys = ["message", "response", "output", "result", "data", "choices"];
+  return nestedKeys.flatMap((key) => collectTextFragments(record[key], seen));
 }

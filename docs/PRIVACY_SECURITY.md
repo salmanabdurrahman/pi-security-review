@@ -65,12 +65,13 @@ No telemetry, metrics upload, or background network calls are performed by runti
 
 Network writes happen only through explicit GitHub PR comment paths:
 
-| Path                                  | Default                    | Required to write                                                    |
-| ------------------------------------- | -------------------------- | -------------------------------------------------------------------- |
-| `/security-review-comment`            | Dry-run preview            | `--yes`                                                              |
-| `security_review_github_comment` tool | Dry-run preview            | `post: true` and `approve: true`                                     |
-| `security-review:ci`                  | Artifact/final report only | `--comment --yes --pr <number>` plus trusted report                  |
-| Composite GitHub Action               | Artifact-only              | `comment: true`, `yes: true`, `pr`, and final report unless override |
+| Path                                       | Default                                 | Required to write                                                     |
+| ------------------------------------------ | --------------------------------------- | --------------------------------------------------------------------- |
+| `/security-review-comment`                 | Dry-run preview                         | `--yes`                                                               |
+| `security_review_github_comment` tool      | Dry-run preview                         | `post: true` and `approve: true`                                      |
+| `security-review:ci`                       | Artifact/final report only              | `--comment --yes --pr <number>` plus trusted report                   |
+| Composite GitHub Action                    | Artifact-only                           | `comment: true`, `yes: true`, `pr`, and final report unless override  |
+| `.github/workflows/security-review-pr.yml` | Artifact-only for forks/missing secrets | Same-repo PR, model secrets, final report, and `pull-requests: write` |
 
 The package never deletes GitHub comments. It can update an existing bot marker comment when requested. Inline comments are best-effort, validated against changed PR lines, and fall back to summary when mapping fails.
 
@@ -86,6 +87,8 @@ Tokens are not accepted in CLI flags, stored in config, written to reports, or p
 ## CI Safety
 
 Artifact-only CI mode needs only `contents: read`. It builds context/prompt artifacts but does not call a model and is not a final security result.
+
+The bundled PR workflow uses `contents: read` and `pull-requests: write` so it can post/update a final report comment. It only performs model-backed review and PR comments for same-repository PRs with configured model secrets. Fork PRs stay artifact-only and do not receive comments.
 
 External final report mode reads a trusted model-produced report containing the `<!-- pi-security-review-json -->` marker and can apply `--fail-on-high` / `--fail-on-medium` gates.
 

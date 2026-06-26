@@ -34,7 +34,7 @@ jobs:
   security-review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
@@ -51,7 +51,7 @@ jobs:
           path: artifacts/
 ```
 
-The examples use floating major tags for readability (`actions/checkout@v4`, `oven-sh/setup-bun@v2`, `actions/upload-artifact@v4`). For high-trust/release workflows, pin third-party actions to reviewed commit SHAs and rotate intentionally.
+The examples use floating major tags for readability (`actions/checkout@v6`, `oven-sh/setup-bun@v2`, `actions/upload-artifact@v4`). For high-trust/release workflows, pin third-party actions to reviewed commit SHAs and rotate intentionally.
 
 ## Script Flags
 
@@ -143,7 +143,7 @@ permissions:
   pull-requests: write
 
 steps:
-  - uses: actions/checkout@v4
+  - uses: actions/checkout@v6
     with:
       fetch-depth: 0
   - uses: oven-sh/setup-bun@v2
@@ -184,7 +184,7 @@ jobs:
   security-review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: owner/pi-security-review@v0.1.0
@@ -210,6 +210,43 @@ Action outputs:
 | `results-file`   | JSON artifact path                           |
 | `markdown-file`  | Markdown artifact path                       |
 
+## Model-backed PR Workflow (OpenAI-compatible)
+
+The bundled `.github/workflows/security-review-pr.yml` is a real PR workflow template:
+
+- Always builds artifact-only context first.
+- Runs a model call only for same-repository PRs when secrets are configured.
+- Keeps fork PRs artifact-only so model credentials are not exposed to untrusted code.
+- Posts/updates a readable PR comment only after a model-produced final report is normalized.
+- Applies `fail-on-high` and `fail-on-medium` only after final report comment/write completes.
+- Does not post comments for fork PRs or missing model secrets.
+
+Configure repository secrets:
+
+| Secret                           | Required                    | Description                                                |
+| -------------------------------- | --------------------------- | ---------------------------------------------------------- |
+| `SECURITY_REVIEW_MODEL_API_KEY`  | Yes for model-backed review | API key for OpenAI-compatible `/chat/completions` provider |
+| `SECURITY_REVIEW_MODEL_NAME`     | Yes for model-backed review | Model name/provider model ID                               |
+| `SECURITY_REVIEW_MODEL_BASE_URL` | Optional                    | Defaults to `https://api.openai.com/v1`                    |
+
+If secrets are missing or PR comes from a fork, the workflow still uploads prompt/context artifacts but is not a final security verdict and does not post a PR comment.
+
+Required workflow permissions for automatic comments:
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
+```
+
+Comment behavior:
+
+- Uses `<!-- pi-security-review -->` marker.
+- Updates existing marker comment when present.
+- Never deletes comments.
+- Redacts common secret-like values before posting.
+- Uses `GITHUB_TOKEN`/`${{ github.token }}` from workflow runtime; no token secret is stored in repo config.
+
 ## Composite Action: Final Report Gate
 
 ```yaml
@@ -220,7 +257,7 @@ jobs:
   security-review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: owner/pi-security-review@v0.1.0
@@ -247,7 +284,7 @@ jobs:
   security-review-comment:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: owner/pi-security-review@v0.1.0
