@@ -101,7 +101,6 @@ The Pi manifest in `package.json` must point to runtime output:
 `bun run prepublish:audit` must reject:
 
 - `.pi/`
-- `references/`
 - `node_modules/`
 - `test/`
 - `tasks/`
@@ -246,4 +245,4 @@ Confirm:
 - Artifact-only CI is clearly documented as not a final security result.
 - Prompt-injection limitation is documented.
 - SARIF export is valid SARIF 2.1.0 structure, not placeholder JSON.
-- Packed tarball excludes `.pi/`, `references/`, env files, logs, tarballs, private keys, certs, stale reports, tests, tasks, and unapproved docs.
+- Packed tarball excludes `.pi/`, env files, logs, tarballs, private keys, certs, stale reports, tests, tasks, and unapproved docs.

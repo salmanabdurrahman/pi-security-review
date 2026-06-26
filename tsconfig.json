@@ -20,5 +20,5 @@
     "noPropertyAccessFromIndexSignature": false
   },
   "include": ["index.ts", "scripts/**/*.ts", "src/**/*.ts", "test/**/*.ts"],
-  "exclude": ["dist", "node_modules", "references"]
+  "exclude": ["dist", "node_modules"]
 }

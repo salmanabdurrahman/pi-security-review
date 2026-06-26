@@ -33,7 +33,6 @@ const PUBLIC_DOCS = new Set([
 ]);
 const FORBIDDEN_PACK_PATTERNS = [
   /^\.pi\//u,
-  /^references\//u,
   /^scripts\/(?!security-review-ci\.ts$)/u,
   /^test\//u,
   /^tasks\//u,

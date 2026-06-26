@@ -33,7 +33,7 @@ The package reads from current Git repository:
 - Repo-local custom instruction files when explicitly requested.
 - Optional code-review-graph context when available and enabled.
 
-Default filters skip secret-like files, env files, private keys, certificates, `.pi/`, `references/`, generated/vendor paths, package artifacts, and oversized files according to config.
+Default filters skip secret-like files, env files, private keys, certificates, `.pi/`, generated/vendor paths, package artifacts, and oversized files according to config.
 
 ## Model Provider Boundary
 
@@ -148,7 +148,6 @@ Runtime helpers use fixed argv arrays through `src/util/exec.ts` and do not buil
 `bun run prepublish:audit` builds `dist`, verifies copied runtime files match source files, runs npm pack dry-run, and blocks forbidden package contents:
 
 - `.pi/`
-- `references/`
 - `node_modules/`
 - stale reports/cache
 - tarballs and logs
