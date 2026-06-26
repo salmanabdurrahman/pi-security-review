@@ -17,6 +17,14 @@ test("GitHub Action surface is artifact-only by default", async () => {
   const action = await readFile(actionPath, "utf8");
   expect(action).toContain('name: "Pi Security Review"');
   expect(action).toContain("final-report:");
+  expect(action).toContain("scan-instructions-file:");
+  expect(action).toContain("exclude-directories:");
+  expect(action).toContain("upload-results:");
+  expect(action).toContain("actions/upload-artifact@v4");
+  expect(action).toContain("SR_INPUT_SCAN_INSTRUCTIONS_TEXT");
+  expect(action).toContain('--scan-instructions-text" "$SR_INPUT_SCAN_INSTRUCTIONS_TEXT');
+  expect(action).toContain("retention-days:");
+  expect(action).toContain("inputs.retention-days");
   expect(action).toContain("comment:");
   expect(action).toContain('default: "false"');
   expect(action).not.toContain("claude-api-key");
@@ -42,6 +50,8 @@ test("security-review CI help prints artifact-only mode", async () => {
   expect(result.status).toBe(0);
   expect(result.stdout).toContain("Artifact-only mode");
   expect(result.stdout).toContain("--comment");
+  expect(result.stdout).toContain("--scan-instructions-file");
+  expect(result.stdout).toContain("--exclude-directories");
 });
 
 test("security-review CI writes bounded artifacts without network comment", async () => {
@@ -72,6 +82,84 @@ test("security-review CI writes bounded artifacts without network comment", asyn
   const markdown = await readFile(markdownPath, "utf8");
   expect(markdown).toContain("Security Review CI Context");
   expect(markdown).toContain("CI artifact-only mode generated context and prompt only");
+});
+
+test("security-review CI applies custom instructions, scope overrides, and PR event metadata", async () => {
+  const repo = await tempRepo();
+  await writeFile(join(repo, "src.ts"), "export const reviewed = true;\n", "utf8");
+  await writeFile(join(repo, "skip.ts"), "export const skipped = true;\n", "utf8");
+  await execFile("git", ["add", "src.ts", "skip.ts"], { cwd: repo });
+  await execFile("git", ["commit", "-m", "init"], { cwd: repo });
+  await writeFile(join(repo, "src.ts"), "export const reviewed = false;\n", "utf8");
+  await writeFile(join(repo, "skip.ts"), "export const skipped = false;\n", "utf8");
+  await writeFile(join(repo, "scan.md"), "Prioritize authz regressions.", "utf8");
+
+  const eventPath = join(repo, "event.json");
+  await writeFile(
+    eventPath,
+    JSON.stringify({
+      pull_request: {
+        number: 42,
+        title: "Tighten auth",
+        user: { login: "octocat" },
+        base: { ref: "main", sha: "base-sha" },
+        head: { ref: "feature", sha: "head-sha" },
+        changed_files: 2,
+        additions: 3,
+        deletions: 1,
+        body: "PR body text",
+      },
+    }),
+    "utf8",
+  );
+
+  const outputPath = join(repo, "artifacts", "context.json");
+  process.env.GITHUB_EVENT_PATH = eventPath;
+  const result = await execFile(
+    "bun",
+    [
+      scriptPath,
+      "--output",
+      outputPath,
+      "--scan-instructions-file",
+      "scan.md",
+      "--filter-instructions-text",
+      "Ignore generated fixtures.",
+      "--include",
+      "*.ts",
+      "--exclude",
+      "skip.ts",
+      "--exclude-directories",
+      "vendor",
+      "--paths",
+      "src.ts,skip.ts",
+    ],
+    { cwd: repo, timeoutMs: 30_000, input: undefined },
+  );
+
+  expect(result.status).toBe(0);
+  const output = JSON.parse(await readFile(outputPath, "utf8"));
+  expect(output.prompt).toContain("Prioritize authz regressions.");
+  expect(output.prompt).toContain("Ignore generated fixtures.");
+  expect(output.context.filesReviewed).toEqual(["src.ts"]);
+  expect(output.context.skippedFiles).toContainEqual({ path: "skip.ts", reason: "excluded_path" });
+  expect(output.context.pullRequest).toMatchObject({
+    number: 42,
+    title: "Tighten auth",
+    author: "octocat",
+    changedFiles: 2,
+  });
+  delete process.env.GITHUB_EVENT_PATH;
+});
+
+test("security-review CI refuses unsafe custom instruction path", async () => {
+  const repo = await tempRepo();
+  const result = await execFile("bun", [scriptPath, "--scan-instructions-file", "../secret.md"], {
+    cwd: repo,
+    timeoutMs: 20_000,
+  });
+  expect(result.status).toBe(1);
+  expect(result.stdout).toContain("Instruction path must stay inside repo");
 });
 
 test("security-review CI refuses comment without yes", async () => {

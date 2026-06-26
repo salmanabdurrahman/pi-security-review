@@ -24,6 +24,7 @@ export interface BuildSecurityReviewContextOptions extends ResolveDiffOptions {
   codeReviewGraphContext?: unknown;
   codeReviewGraphAvailable?: boolean;
   codeReviewGraphWarning?: string;
+  prMetadata?: PullRequestMetadata;
   generatedAt?: string;
 }
 
@@ -59,6 +60,7 @@ export interface SecurityReviewContext {
     scan?: InstructionContext;
     filter?: InstructionContext;
   };
+  pullRequest?: PullRequestMetadata;
   codeReviewGraph: {
     enabled: boolean;
     available: boolean;
@@ -79,6 +81,20 @@ export interface InstructionContext {
   source: "inline" | "file";
   path?: string;
   text: string;
+}
+
+export interface PullRequestMetadata {
+  number?: number;
+  title?: string;
+  author?: string;
+  baseRef?: string;
+  headRef?: string;
+  baseSha?: string;
+  headSha?: string;
+  changedFiles?: number;
+  additions?: number;
+  deletions?: number;
+  bodyExcerpt?: string;
 }
 
 export interface BuiltSecurityReviewContext {
@@ -149,6 +165,7 @@ export async function buildSecurityReviewContext(
       scan: scanInstruction,
       filter: filterInstruction,
     },
+    pullRequest: options.prMetadata ? sanitizePullRequestMetadata(options.prMetadata) : undefined,
     codeReviewGraph: crg,
     truncation: {
       diffTruncated: scope.truncated,
@@ -160,6 +177,27 @@ export async function buildSecurityReviewContext(
   };
 
   return fitContextToLimit(payload, config.maxContextChars);
+}
+
+function sanitizePullRequestMetadata(metadata: PullRequestMetadata): PullRequestMetadata {
+  return {
+    number: metadata.number,
+    title: truncateText(metadata.title, 300),
+    author: truncateText(metadata.author, 120),
+    baseRef: truncateText(metadata.baseRef, 120),
+    headRef: truncateText(metadata.headRef, 120),
+    baseSha: truncateText(metadata.baseSha, 80),
+    headSha: truncateText(metadata.headSha, 80),
+    changedFiles: metadata.changedFiles,
+    additions: metadata.additions,
+    deletions: metadata.deletions,
+    bodyExcerpt: truncateText(metadata.bodyExcerpt, 2000),
+  };
+}
+
+function truncateText(value: string | undefined, maxChars: number): string | undefined {
+  if (value === undefined) return undefined;
+  return value.length > maxChars ? `${value.slice(0, maxChars)}…` : value;
 }
 
 function buildModelMetadata(

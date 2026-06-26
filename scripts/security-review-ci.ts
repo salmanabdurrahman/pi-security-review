@@ -16,7 +16,8 @@ import { buildSecurityPrompt } from "../src/security/prompt.ts";
 import { redactSecretLikeValues, redactSecretsInValue } from "../src/security/redaction.ts";
 import { renderSecurityReviewMarkdown } from "../src/security/report.ts";
 import { writeLatestJson, writeLatestMarkdown } from "../src/store/reportStore.ts";
-import { buildSecurityReviewContext } from "../src/tools/buildContext.ts";
+import { buildSecurityReviewContext, type PullRequestMetadata } from "../src/tools/buildContext.ts";
+import { execFile } from "../src/util/exec.ts";
 
 interface CiFlags {
   base?: string;
@@ -28,6 +29,13 @@ interface CiFlags {
   yes: boolean;
   model?: string;
   finalReport?: string;
+  scanInstructionsFile?: string;
+  filterInstructionsFile?: string;
+  scanInstructionsText?: string;
+  filterInstructionsText?: string;
+  include: string[];
+  exclude: string[];
+  paths: string[];
   allowArtifactComment: boolean;
   failOnHigh: boolean;
   failOnMedium: boolean;
@@ -53,6 +61,9 @@ function parseArgs(args: string[]): CiFlags {
   const flags: CiFlags = {
     comment: false,
     yes: false,
+    include: [],
+    exclude: [],
+    paths: [],
     allowArtifactComment: false,
     failOnHigh: false,
     failOnMedium: false,
@@ -115,6 +126,58 @@ function parseArgs(args: string[]): CiFlags {
           i++;
         } else flags.errors.push("Missing value for --final-report.");
         break;
+      case "--scan-instructions-file":
+        if (next && !next.startsWith("--")) {
+          flags.scanInstructionsFile = next;
+          i++;
+        } else flags.errors.push("Missing value for --scan-instructions-file.");
+        break;
+      case "--filter-instructions-file":
+        if (next && !next.startsWith("--")) {
+          flags.filterInstructionsFile = next;
+          i++;
+        } else flags.errors.push("Missing value for --filter-instructions-file.");
+        break;
+      case "--scan-instructions-text":
+        if (next && !next.startsWith("--")) {
+          flags.scanInstructionsText = next;
+          i++;
+        } else flags.errors.push("Missing value for --scan-instructions-text.");
+        break;
+      case "--filter-instructions-text":
+        if (next && !next.startsWith("--")) {
+          flags.filterInstructionsText = next;
+          i++;
+        } else flags.errors.push("Missing value for --filter-instructions-text.");
+        break;
+      case "--include":
+        if (next && !next.startsWith("--")) {
+          flags.include.push(...splitList(next));
+          i++;
+        } else flags.errors.push("Missing value for --include.");
+        break;
+      case "--exclude":
+        if (next && !next.startsWith("--")) {
+          flags.exclude.push(...splitList(next));
+          i++;
+        } else flags.errors.push("Missing value for --exclude.");
+        break;
+      case "--exclude-directories":
+        if (next && !next.startsWith("--")) {
+          flags.exclude.push(...splitList(next).map(directoryToGlob));
+          i++;
+        } else flags.errors.push("Missing value for --exclude-directories.");
+        break;
+      case "--paths":
+        if (next && !next.startsWith("--")) {
+          flags.paths.push(...splitList(next));
+          i++;
+          while (args[i + 1] && !args[i + 1]?.startsWith("--")) {
+            flags.paths.push(args[i + 1] as string);
+            i++;
+          }
+        } else flags.errors.push("Missing value for --paths.");
+        break;
       case "--allow-artifact-comment":
         flags.allowArtifactComment = true;
         break;
@@ -137,6 +200,81 @@ function parseArgs(args: string[]): CiFlags {
   return flags;
 }
 
+function splitList(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function directoryToGlob(value: string): string {
+  const cleaned = value.replace(/\\/gu, "/").replace(/^\.\//u, "").replace(/\/+$/u, "");
+  return cleaned.includes("*") ? cleaned : `${cleaned}/**`;
+}
+
+function applyScopeOverrides(config: SecurityReviewConfig, flags: CiFlags): SecurityReviewConfig {
+  if (flags.include.length === 0 && flags.exclude.length === 0) return config;
+  return {
+    ...config,
+    include: flags.include.length > 0 ? flags.include : config.include,
+    exclude: flags.exclude.length > 0 ? [...config.exclude, ...flags.exclude] : config.exclude,
+  };
+}
+
+async function readPullRequestMetadata(
+  repoRoot: string,
+  prNumber: number | undefined,
+): Promise<PullRequestMetadata | undefined> {
+  const fromEvent = await readPullRequestMetadataFromEvent();
+  if (fromEvent) return fromEvent;
+  const repository = process.env.GITHUB_REPOSITORY;
+  if (!prNumber || !process.env.GH_TOKEN || !repository) return undefined;
+  const result = await execFile(
+    "gh",
+    [
+      "api",
+      `repos/${repository}/pulls/${prNumber}`,
+      "--jq",
+      "{number,title,user:.user.login,baseRef:.base.ref,headRef:.head.ref,baseSha:.base.sha,headSha:.head.sha,changedFiles:.changed_files,additions,deletions,body}",
+    ],
+    { cwd: repoRoot, timeoutMs: 10_000, maxOutputBytes: 128 * 1024 },
+  );
+  if (result.status !== 0 || !result.stdout.trim()) return undefined;
+  return metadataFromUnknown(JSON.parse(result.stdout));
+}
+
+async function readPullRequestMetadataFromEvent(): Promise<PullRequestMetadata | undefined> {
+  const eventPath = process.env.GITHUB_EVENT_PATH;
+  if (!eventPath) return undefined;
+  const event = JSON.parse(await readFile(eventPath, "utf8"));
+  const pr = event.pull_request;
+  return pr ? metadataFromUnknown(pr) : undefined;
+}
+
+function metadataFromUnknown(value: any): PullRequestMetadata {
+  return {
+    number: numberValue(value.number),
+    title: stringValue(value.title),
+    author: stringValue(value.author ?? value.user?.login),
+    baseRef: stringValue(value.baseRef ?? value.base?.ref),
+    headRef: stringValue(value.headRef ?? value.head?.ref),
+    baseSha: stringValue(value.baseSha ?? value.base?.sha),
+    headSha: stringValue(value.headSha ?? value.head?.sha),
+    changedFiles: numberValue(value.changedFiles ?? value.changed_files),
+    additions: numberValue(value.additions),
+    deletions: numberValue(value.deletions),
+    bodyExcerpt: stringValue(value.body),
+  };
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function printHelp(): void {
   console.log(`pi-security-review: CI script
 
@@ -153,6 +291,14 @@ Flags:
   --yes                 Explicit approval for GitHub comment mutation
   --model <provider/model>  Record requested Pi model metadata
   --final-report <path> Read final model output/report marker from external runner
+  --scan-instructions-file <path> Repo-relative custom scan instructions file
+  --filter-instructions-file <path> Repo-relative custom false-positive filter file
+  --scan-instructions-text <text> Inline custom scan instructions
+  --filter-instructions-text <text> Inline custom false-positive filter instructions
+  --include <glob[,glob]> Review include override (repeatable)
+  --exclude <glob[,glob]> Review exclude override (repeatable)
+  --paths <path...> Focus review paths
+  --exclude-directories <dir[,dir]> Upstream-compatible exclude alias
   --allow-artifact-comment Allow commenting artifact-only context (maintainer override)
   --fail-on-high        Exit non-zero when final report has HIGH findings
   --fail-on-medium      Exit non-zero when final report has MEDIUM or HIGH findings
@@ -188,14 +334,21 @@ async function main(): Promise<CiResult> {
     const repoRoot = await detectGitRoot(process.cwd());
     if (!repoRoot) throw new Error("Current directory is not inside a git repository.");
     const loaded = await loadConfig(repoRoot);
-    config = loaded.config;
+    config = applyScopeOverrides(loaded.config, flags);
+    const prMetadata = await readPullRequestMetadata(repoRoot, flags.pr);
     contextResult = await buildSecurityReviewContext({
       repoRoot,
       config,
       base: flags.base,
       head: flags.head,
+      paths: flags.paths,
       requestedModel: flags.model,
       activeModel: flags.model,
+      customSecurityScanInstructionsText: flags.scanInstructionsText,
+      falsePositiveFilteringInstructionsText: flags.filterInstructionsText,
+      customSecurityScanInstructionsFile: flags.scanInstructionsFile,
+      falsePositiveFilteringInstructionsFile: flags.filterInstructionsFile,
+      prMetadata,
     });
   } catch (error) {
     return emptyResult([(error as Error).message]);
@@ -233,6 +386,7 @@ async function main(): Promise<CiResult> {
       contextTruncated: contextResult.payload.truncation.contextTruncated,
       codeReviewGraphUsed: contextResult.payload.codeReviewGraph.available,
       generatedAt: contextResult.payload.generatedAt,
+      pullRequest: contextResult.payload.pullRequest,
       mode: "artifact-only",
     },
   };
@@ -259,6 +413,7 @@ async function main(): Promise<CiResult> {
         model: parsed.marker.value.metadata?.model ?? flags.model,
         promptChars: prompt.text.length,
         generatedAt: parsed.marker.value.metadata?.generatedAt ?? contextResult.payload.generatedAt,
+        pullRequest: contextResult.payload.pullRequest,
         mode: "external-final-report",
       },
     };

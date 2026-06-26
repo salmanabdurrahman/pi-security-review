@@ -27,6 +27,46 @@ inputs:
     description: "Model-produced report containing pi-security-review JSON marker"
     required: false
     default: ""
+  scan-instructions-file:
+    description: "Repo-relative custom security scan instructions file"
+    required: false
+    default: ""
+  filter-instructions-file:
+    description: "Repo-relative custom false-positive filtering instructions file"
+    required: false
+    default: ""
+  scan-instructions-text:
+    description: "Inline custom security scan instructions"
+    required: false
+    default: ""
+  filter-instructions-text:
+    description: "Inline custom false-positive filtering instructions"
+    required: false
+    default: ""
+  include:
+    description: "Comma-separated include globs overriding repo config include"
+    required: false
+    default: ""
+  exclude:
+    description: "Comma-separated exclude globs appended to repo config exclude"
+    required: false
+    default: ""
+  paths:
+    description: "Comma-separated focus paths for git diff"
+    required: false
+    default: ""
+  exclude-directories:
+    description: "Comma-separated directories to exclude; upstream-compatible alias"
+    required: false
+    default: ""
+  upload-results:
+    description: "Upload JSON and Markdown results as workflow artifact"
+    required: false
+    default: "true"
+  retention-days:
+    description: "Artifact retention days for uploaded results"
+    required: false
+    default: "7"
   comment:
     description: "Post PR comment. Requires yes=true and final-report unless allow-artifact-comment=true"
     required: false
@@ -88,18 +128,57 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
         ACTION_PATH: ${{ github.action_path }}
+        SR_INPUT_BASE: ${{ inputs.base }}
+        SR_INPUT_HEAD: ${{ inputs.head }}
+        SR_INPUT_OUTPUT: ${{ inputs.output }}
+        SR_INPUT_MARKDOWN: ${{ inputs.markdown }}
+        SR_INPUT_MODEL: ${{ inputs.model }}
+        SR_INPUT_FINAL_REPORT: ${{ inputs.final-report }}
+        SR_INPUT_SCAN_INSTRUCTIONS_FILE: ${{ inputs.scan-instructions-file }}
+        SR_INPUT_FILTER_INSTRUCTIONS_FILE: ${{ inputs.filter-instructions-file }}
+        SR_INPUT_SCAN_INSTRUCTIONS_TEXT: ${{ inputs.scan-instructions-text }}
+        SR_INPUT_FILTER_INSTRUCTIONS_TEXT: ${{ inputs.filter-instructions-text }}
+        SR_INPUT_INCLUDE: ${{ inputs.include }}
+        SR_INPUT_EXCLUDE: ${{ inputs.exclude }}
+        SR_INPUT_PATHS: ${{ inputs.paths }}
+        SR_INPUT_EXCLUDE_DIRECTORIES: ${{ inputs.exclude-directories }}
+        SR_INPUT_COMMENT: ${{ inputs.comment }}
+        SR_INPUT_PR: ${{ inputs.pr }}
+        SR_INPUT_YES: ${{ inputs.yes }}
+        SR_INPUT_ALLOW_ARTIFACT_COMMENT: ${{ inputs.allow-artifact-comment }}
+        SR_INPUT_FAIL_ON_HIGH: ${{ inputs.fail-on-high }}
+        SR_INPUT_FAIL_ON_MEDIUM: ${{ inputs.fail-on-medium }}
       run: |
         set -euo pipefail
-        args=("--base" "${{ inputs.base }}" "--head" "${{ inputs.head }}" "--output" "${{ inputs.output }}" "--markdown" "${{ inputs.markdown }}")
-        if [ -n "${{ inputs.model }}" ]; then args+=("--model" "${{ inputs.model }}"); fi
-        if [ -n "${{ inputs.final-report }}" ]; then args+=("--final-report" "${{ inputs.final-report }}"); fi
-        if [ "${{ inputs.comment }}" = "true" ]; then args+=("--comment"); fi
-        if [ -n "${{ inputs.pr }}" ]; then args+=("--pr" "${{ inputs.pr }}"); fi
-        if [ "${{ inputs.yes }}" = "true" ]; then args+=("--yes"); fi
-        if [ "${{ inputs.allow-artifact-comment }}" = "true" ]; then args+=("--allow-artifact-comment"); fi
-        if [ "${{ inputs.fail-on-high }}" = "true" ]; then args+=("--fail-on-high"); fi
-        if [ "${{ inputs.fail-on-medium }}" = "true" ]; then args+=("--fail-on-medium"); fi
+        args=("--base" "$SR_INPUT_BASE" "--head" "$SR_INPUT_HEAD" "--output" "$SR_INPUT_OUTPUT" "--markdown" "$SR_INPUT_MARKDOWN")
+        if [ -n "$SR_INPUT_MODEL" ]; then args+=("--model" "$SR_INPUT_MODEL"); fi
+        if [ -n "$SR_INPUT_FINAL_REPORT" ]; then args+=("--final-report" "$SR_INPUT_FINAL_REPORT"); fi
+        if [ -n "$SR_INPUT_SCAN_INSTRUCTIONS_FILE" ]; then args+=("--scan-instructions-file" "$SR_INPUT_SCAN_INSTRUCTIONS_FILE"); fi
+        if [ -n "$SR_INPUT_FILTER_INSTRUCTIONS_FILE" ]; then args+=("--filter-instructions-file" "$SR_INPUT_FILTER_INSTRUCTIONS_FILE"); fi
+        if [ -n "$SR_INPUT_SCAN_INSTRUCTIONS_TEXT" ]; then args+=("--scan-instructions-text" "$SR_INPUT_SCAN_INSTRUCTIONS_TEXT"); fi
+        if [ -n "$SR_INPUT_FILTER_INSTRUCTIONS_TEXT" ]; then args+=("--filter-instructions-text" "$SR_INPUT_FILTER_INSTRUCTIONS_TEXT"); fi
+        if [ -n "$SR_INPUT_INCLUDE" ]; then args+=("--include" "$SR_INPUT_INCLUDE"); fi
+        if [ -n "$SR_INPUT_EXCLUDE" ]; then args+=("--exclude" "$SR_INPUT_EXCLUDE"); fi
+        if [ -n "$SR_INPUT_PATHS" ]; then args+=("--paths" "$SR_INPUT_PATHS"); fi
+        if [ -n "$SR_INPUT_EXCLUDE_DIRECTORIES" ]; then args+=("--exclude-directories" "$SR_INPUT_EXCLUDE_DIRECTORIES"); fi
+        if [ "$SR_INPUT_COMMENT" = "true" ]; then args+=("--comment"); fi
+        if [ -n "$SR_INPUT_PR" ]; then args+=("--pr" "$SR_INPUT_PR"); fi
+        if [ "$SR_INPUT_YES" = "true" ]; then args+=("--yes"); fi
+        if [ "$SR_INPUT_ALLOW_ARTIFACT_COMMENT" = "true" ]; then args+=("--allow-artifact-comment"); fi
+        if [ "$SR_INPUT_FAIL_ON_HIGH" = "true" ]; then args+=("--fail-on-high"); fi
+        if [ "$SR_INPUT_FAIL_ON_MEDIUM" = "true" ]; then args+=("--fail-on-medium"); fi
         bun "$ACTION_PATH/scripts/security-review-ci.ts" "${args[@]}"
+
+    - name: Upload security review results
+      if: ${{ inputs.upload-results == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: pi-security-review-results
+        path: |
+          ${{ inputs.output }}
+          ${{ inputs.markdown }}
+        retention-days: ${{ inputs.retention-days }}
+        if-no-files-found: ignore
 
     - name: Summarize outputs
       id: summary
