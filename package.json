@@ -1,0 +1,64 @@
+{
+  "name": "pi-security-review",
+  "version": "0.1.0",
+  "description": "High-signal security review package for Pi.",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/salmanabdurrahman/pi-security-review.git"
+  },
+  "homepage": "https://github.com/salmanabdurrahman/pi-security-review#readme",
+  "bugs": {
+    "url": "https://github.com/salmanabdurrahman/pi-security-review/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "security-review",
+    "sast",
+    "code-review",
+    "vulnerability"
+  ],
+  "module": "./dist/index.ts",
+  "pi": {
+    "extensions": [
+      "./dist/index.ts"
+    ]
+  },
+  "files": [
+    "dist",
+    "scripts/security-review-ci.ts",
+    "README.md",
+    "LICENSE",
+    "action.yml",
+    "package.json",
+    "docs/PRIVACY_SECURITY.md",
+    "docs/CI_GITHUB_ACTIONS.md",
+    "docs/PROMPT_CONTRACT.md",
+    "docs/RELEASE.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "bun test ./test",
+    "check": "bun run typecheck && bun run lint && bun test ./test",
+    "build": "bun scripts/build-package.ts",
+    "smoke:security-review": "bun scripts/smoke-security-review.ts",
+    "security-review:ci": "bun scripts/security-review-ci.ts",
+    "pack:dry-run": "bun run build && npm pack --dry-run --ignore-scripts",
+    "prepublish:audit": "bun scripts/audit-npm-package.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.15",
+    "@types/bun": "latest",
+    "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  }
+}

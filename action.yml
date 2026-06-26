@@ -1,0 +1,125 @@
+name: "Pi Security Review"
+description: "Provider-neutral Pi security review context/final-report gate for GitHub Actions"
+author: "pi-security-review maintainers"
+
+inputs:
+  base:
+    description: "Base ref for git diff"
+    required: false
+    default: "origin/${{ github.base_ref }}"
+  head:
+    description: "Head ref for git diff"
+    required: false
+    default: "HEAD"
+  output:
+    description: "JSON artifact path"
+    required: false
+    default: ".pi/security-review/ci-context.json"
+  markdown:
+    description: "Markdown report artifact path"
+    required: false
+    default: ".pi/security-review/ci-report.md"
+  model:
+    description: "Requested Pi model metadata to record; does not configure provider auth"
+    required: false
+    default: ""
+  final-report:
+    description: "Model-produced report containing pi-security-review JSON marker"
+    required: false
+    default: ""
+  comment:
+    description: "Post PR comment. Requires yes=true and final-report unless allow-artifact-comment=true"
+    required: false
+    default: "false"
+  pr:
+    description: "Pull request number for optional comment"
+    required: false
+    default: ""
+  yes:
+    description: "Explicit approval for GitHub comment mutation"
+    required: false
+    default: "false"
+  allow-artifact-comment:
+    description: "Maintainer override to comment artifact-only context; not recommended for security results"
+    required: false
+    default: "false"
+  fail-on-high:
+    description: "Fail when final report contains HIGH findings"
+    required: false
+    default: "false"
+  fail-on-medium:
+    description: "Fail when final report contains MEDIUM or HIGH findings"
+    required: false
+    default: "false"
+
+outputs:
+  findings-count:
+    description: "Total kept findings in final/artifact report"
+    value: ${{ steps.summary.outputs.findings_count }}
+  high-count:
+    description: "HIGH findings count"
+    value: ${{ steps.summary.outputs.high_count }}
+  medium-count:
+    description: "MEDIUM findings count"
+    value: ${{ steps.summary.outputs.medium_count }}
+  mode:
+    description: "CI mode: artifact-only or external-final-report"
+    value: ${{ steps.summary.outputs.mode }}
+  results-file:
+    description: "JSON artifact path"
+    value: ${{ inputs.output }}
+  markdown-file:
+    description: "Markdown artifact path"
+    value: ${{ inputs.markdown }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Bun
+      uses: oven-sh/setup-bun@v2
+
+    - name: Install package dependencies
+      shell: bash
+      run: bun install --frozen-lockfile
+      working-directory: ${{ github.action_path }}
+
+    - name: Run Pi security review CI
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        args=("--base" "${{ inputs.base }}" "--head" "${{ inputs.head }}" "--output" "${{ inputs.output }}" "--markdown" "${{ inputs.markdown }}")
+        if [ -n "${{ inputs.model }}" ]; then args+=("--model" "${{ inputs.model }}"); fi
+        if [ -n "${{ inputs.final-report }}" ]; then args+=("--final-report" "${{ inputs.final-report }}"); fi
+        if [ "${{ inputs.comment }}" = "true" ]; then args+=("--comment"); fi
+        if [ -n "${{ inputs.pr }}" ]; then args+=("--pr" "${{ inputs.pr }}"); fi
+        if [ "${{ inputs.yes }}" = "true" ]; then args+=("--yes"); fi
+        if [ "${{ inputs.allow-artifact-comment }}" = "true" ]; then args+=("--allow-artifact-comment"); fi
+        if [ "${{ inputs.fail-on-high }}" = "true" ]; then args+=("--fail-on-high"); fi
+        if [ "${{ inputs.fail-on-medium }}" = "true" ]; then args+=("--fail-on-medium"); fi
+        bun "$ACTION_PATH/scripts/security-review-ci.ts" "${args[@]}"
+
+    - name: Summarize outputs
+      id: summary
+      shell: bash
+      run: |
+        set -euo pipefail
+        node <<'NODE' >> "$GITHUB_OUTPUT"
+        const fs = require('node:fs');
+        const path = process.env.RESULTS_FILE;
+        const data = JSON.parse(fs.readFileSync(path, 'utf8'));
+        const summary = data.report?.analysisSummary ?? {};
+        const findings = Array.isArray(data.report?.findings) ? data.report.findings.length : 0;
+        console.log(`findings_count=${findings}`);
+        console.log(`high_count=${summary.highSeverity ?? 0}`);
+        console.log(`medium_count=${summary.mediumSeverity ?? 0}`);
+        console.log(`mode=${data.mode ?? 'unknown'}`);
+        NODE
+      env:
+        RESULTS_FILE: ${{ inputs.output }}
+
+branding:
+  icon: "shield"
+  color: "red"

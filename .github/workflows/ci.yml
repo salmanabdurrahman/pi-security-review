@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Bun check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run lint
+      - run: bun test ./test
+      - run: bun run build
+      - run: bun run smoke:security-review
+      - run: bun run prepublish:audit
+      - run: npm pack --dry-run --ignore-scripts
+      - name: Upload package dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-security-review-dist
+          path: |
+            dist/**
+            scripts/security-review-ci.ts
+            action.yml
+            package.json
+            README.md
+            LICENSE
+            docs/PRIVACY_SECURITY.md
+            docs/CI_GITHUB_ACTIONS.md
+            docs/PROMPT_CONTRACT.md
+            docs/RELEASE.md
+          if-no-files-found: error
+
+  node22:
+    name: Node 22 Pi runtime smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22.14.0"
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run lint
+      - run: bun test ./test
+      - run: bun run build
+      - run: bun run smoke:security-review
+      - run: bun run prepublish:audit
+      - run: npm pack --dry-run --ignore-scripts
+      - name: Upload package dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-security-review-dist-node22
+          path: |
+            dist/**
+            scripts/security-review-ci.ts
+            action.yml
+            package.json
+            README.md
+            LICENSE
+            docs/PRIVACY_SECURITY.md
+            docs/CI_GITHUB_ACTIONS.md
+            docs/PROMPT_CONTRACT.md
+            docs/RELEASE.md
+          if-no-files-found: error

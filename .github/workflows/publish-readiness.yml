@@ -1,0 +1,60 @@
+name: Publish readiness
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  readiness:
+    name: Manual publish gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22.14.0"
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@v2
+      - run: npm install -g npm@latest
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun run build
+      - run: bun run smoke:security-review
+      - run: bun run prepublish:audit
+      - run: npm pack --dry-run --ignore-scripts
+      - name: Upload package dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-security-review-publish-readiness
+          path: |
+            dist/**
+            scripts/security-review-ci.ts
+            action.yml
+            package.json
+            README.md
+            LICENSE
+            docs/PRIVACY_SECURITY.md
+            docs/CI_GITHUB_ACTIONS.md
+            docs/PROMPT_CONTRACT.md
+            docs/RELEASE.md
+          if-no-files-found: error
+      - name: Publish gate checklist
+        run: |
+          cat <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          ## Manual publish gate
+
+          This workflow does not publish.
+
+          Maintainer must confirm:
+          - npm package contents inspected from pack dry-run
+          - no secrets/local artifacts in package
+          - GitHub Action surface still artifact-only by default
+          - PR comments require explicit approval
+          - docs/PRIVACY_SECURITY.md and docs/CI_GITHUB_ACTIONS.md match current behavior
+          - release notes/changelog reviewed
+          - npm trusted publishing configured before tag publish
+          EOF
